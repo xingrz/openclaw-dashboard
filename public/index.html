@@ -9,7 +9,6 @@
 <body>
   <div class="scanline"></div>
   <div class="dashboard">
-    <!-- Header -->
     <header class="header">
       <div class="header-left">
         <span class="logo">🦞</span>
@@ -18,37 +17,21 @@
       </div>
       <div class="header-center">
         <div class="live-counters">
-          <div class="counter">
-            <span class="counter-value" id="cnt-messages">0</span>
-            <span class="counter-label">Messages</span>
-          </div>
-          <div class="counter">
-            <span class="counter-value" id="cnt-tools">0</span>
-            <span class="counter-label">Tool Calls</span>
-          </div>
-          <div class="counter">
-            <span class="counter-value" id="cnt-sessions">0</span>
-            <span class="counter-label">Sessions</span>
-          </div>
+          <div class="counter"><span class="counter-value" id="cnt-messages">0</span><span class="counter-label">Messages</span></div>
+          <div class="counter"><span class="counter-value" id="cnt-tools">0</span><span class="counter-label">Tool Calls</span></div>
+          <div class="counter"><span class="counter-value" id="cnt-sessions">0</span><span class="counter-label">Sessions</span></div>
         </div>
       </div>
       <div class="header-right">
-        <div class="status-indicator" id="health-indicator">
-          <span class="dot"></span>
-          <span class="label">CONNECTING</span>
-        </div>
+        <div class="status-indicator" id="health-indicator"><span class="dot"></span><span class="label">CONNECTING</span></div>
         <div class="clock" id="clock">--:--:--</div>
       </div>
     </header>
 
-    <!-- Grid: 3 columns × 2 rows -->
     <div class="grid">
-      <!-- R1C1: Token Usage (wide) -->
-      <div class="card" style="grid-column:1; grid-row:1">
-        <div class="card-header">
-          <span class="card-icon">📊</span>
-          <span class="card-title">TOKEN USAGE (30d)</span>
-        </div>
+      <!-- Row 1: Token Usage | Today | Cost | (empty, merged with Token) -->
+      <div class="card r1-usage">
+        <div class="card-header"><span class="card-icon">📊</span><span class="card-title">TOKEN USAGE (30d)</span></div>
         <div class="card-body">
           <div class="metrics-row">
             <div class="metric"><div class="metric-value" id="total-tokens">--</div><div class="metric-label">Total Tokens</div></div>
@@ -60,12 +43,8 @@
         </div>
       </div>
 
-      <!-- R1C2: Today -->
-      <div class="card" style="grid-column:2; grid-row:1">
-        <div class="card-header">
-          <span class="card-icon">⚡</span>
-          <span class="card-title">TODAY</span>
-        </div>
+      <div class="card r1-today">
+        <div class="card-header"><span class="card-icon">⚡</span><span class="card-title">TODAY</span></div>
         <div class="card-body">
           <div class="stat-grid">
             <div class="stat"><div class="stat-value" id="today-tokens">--</div><div class="stat-label">Tokens</div></div>
@@ -73,7 +52,7 @@
             <div class="stat"><div class="stat-value accent-cyan" id="today-output">--</div><div class="stat-label">Output</div></div>
             <div class="stat"><div class="stat-value accent-yellow" id="today-cache-read">--</div><div class="stat-label">Cache Read</div></div>
           </div>
-          <div class="hourly-heat" id="hourly-heat">
+          <div class="hourly-heat">
             <div class="hourly-label">Activity Timeline</div>
             <div class="hourly-bars" id="hourly-bars"></div>
             <div class="hourly-labels"><span>0</span><span>6</span><span>12</span><span>18</span><span>23</span></div>
@@ -81,71 +60,34 @@
         </div>
       </div>
 
-      <!-- R1C3: Cost Breakdown -->
-      <div class="card" style="grid-column:3; grid-row:1">
-        <div class="card-header">
-          <span class="card-icon">💰</span>
-          <span class="card-title">COST BREAKDOWN</span>
-        </div>
-        <div class="card-body">
-          <div class="cost-bars" id="cost-bars"></div>
-        </div>
+      <div class="card r1-cost">
+        <div class="card-header"><span class="card-icon">💰</span><span class="card-title">COST BREAKDOWN</span></div>
+        <div class="card-body"><div class="cost-bars" id="cost-bars"></div></div>
       </div>
 
-      <!-- R2C1-2: Sessions + Task Log side by side -->
-      <div style="grid-column:1 / span 2; grid-row:2; display:flex; gap:10px; min-height:0">
-        <!-- Sessions -->
-        <div class="card" style="flex:1; min-width:0">
-          <div class="card-header">
-            <span class="card-icon">🔗</span>
-            <span class="card-title">SESSIONS</span>
-            <span class="badge" id="session-count">0</span>
-          </div>
-          <div class="card-body">
-            <div class="session-list" id="session-list"></div>
-          </div>
-        </div>
-        <!-- Task Log -->
-        <div class="card" style="flex:1; min-width:0">
-          <div class="card-header">
-            <span class="card-icon">🦐</span>
-            <span class="card-title">虾在忙</span>
-          </div>
-          <div class="card-body">
-            <div class="task-log" id="task-log"></div>
-          </div>
-        </div>
+      <!-- Row 2: Sessions | Task Log | Activity+Channels+Devices -->
+      <div class="card r2-sessions">
+        <div class="card-header"><span class="card-icon">🔗</span><span class="card-title">SESSIONS</span><span class="badge" id="session-count">0</span></div>
+        <div class="card-body"><div class="session-list" id="session-list"></div></div>
       </div>
 
-      <!-- R2C3: Activity + Channels + Devices stacked -->
-      <div style="grid-column:3; grid-row:2; display:flex; flex-direction:column; gap:10px; min-height:0">
-        <div class="card" style="flex:1; min-height:0">
-          <div class="card-header">
-            <span class="card-icon">⚡</span>
-            <span class="card-title">LIVE ACTIVITY</span>
-            <span class="badge pulse" id="activity-count">0</span>
-          </div>
-          <div class="card-body">
-            <div class="activity-feed" id="activity-feed"></div>
-          </div>
+      <div class="card r2-tasks">
+        <div class="card-header"><span class="card-icon">🦐</span><span class="card-title">TASK LOG</span></div>
+        <div class="card-body"><div class="task-log" id="task-log"></div></div>
+      </div>
+
+      <div class="r2-sidebar">
+        <div class="card" style="flex:1;min-height:0">
+          <div class="card-header"><span class="card-icon">⚡</span><span class="card-title">LIVE ACTIVITY</span><span class="badge pulse" id="activity-count">0</span></div>
+          <div class="card-body"><div class="activity-feed" id="activity-feed"></div></div>
         </div>
-        <div class="card" style="flex:0 0 auto">
-          <div class="card-header">
-            <span class="card-icon">🌐</span>
-            <span class="card-title">CHANNELS</span>
-          </div>
-          <div class="card-body">
-            <div class="channel-list" id="channel-list"></div>
-          </div>
+        <div class="card">
+          <div class="card-header"><span class="card-icon">🌐</span><span class="card-title">CHANNELS</span></div>
+          <div class="card-body"><div class="channel-list" id="channel-list"></div></div>
         </div>
-        <div class="card" style="flex:0 0 auto">
-          <div class="card-header">
-            <span class="card-icon">📡</span>
-            <span class="card-title">DEVICES</span>
-          </div>
-          <div class="card-body">
-            <div class="presence-list" id="presence-list"></div>
-          </div>
+        <div class="card">
+          <div class="card-header"><span class="card-icon">📡</span><span class="card-title">DEVICES</span></div>
+          <div class="card-body"><div class="presence-list" id="presence-list"></div></div>
         </div>
       </div>
     </div>

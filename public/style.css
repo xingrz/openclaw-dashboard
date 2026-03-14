@@ -83,12 +83,14 @@ body {
 
 /* ===== GRID ===== */
 .grid {
-  flex: 1; min-height: 0; /* crucial for overflow containment */
+  flex: 1; min-height: 0;
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-columns: 5fr 3fr 4fr;
   grid-template-rows: auto 1fr;
   gap: 10px;
 }
+.r2c3-stack { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.r2c3-activity { flex: 1; min-height: 0; }
 
 /* ===== CARDS ===== */
 .card {
