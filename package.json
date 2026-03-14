@@ -4,21 +4,13 @@
   "private": true,
   "type": "module",
   "description": "Real-time monitoring dashboard for OpenClaw",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "npm run build -w packages/web && npm run build -w packages/server",
     "start": "node dist/server.js",
-    "dev": "tsx src/server.ts"
-  },
-  "dependencies": {
-    "chokidar": "^5.0.0",
-    "express": "^4.21.0",
-    "ws": "^8.18.0"
-  },
-  "devDependencies": {
-    "@types/express": "^5.0.6",
-    "@types/node": "^25.5.0",
-    "@types/ws": "^8.18.1",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "dev:server": "npm run dev -w packages/server",
+    "dev:web": "npm run dev -w packages/web"
   }
 }
