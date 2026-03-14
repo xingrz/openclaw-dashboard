@@ -13,7 +13,7 @@ import {
 const MAX_RECENT_ACTIVITY = 100;
 const HISTORY_LOOKBACK_MS = 24 * 3600 * 1000;
 const TASK_LOOKBACK_MS = 48 * 3600 * 1000;
-const HEAD_READ_BYTES = 128 * 1024;
+const HISTORY_READ_BYTES = 128 * 1024;
 const TAIL_READ_BYTES = 64 * 1024;
 
 export interface ActivityItem {
@@ -119,8 +119,8 @@ export class ActivityTracker {
   private _loadRecentFromFile(filePath: string): void {
     try {
       const stat = fs.statSync(filePath);
-      const offset = Math.max(0, stat.size - HEAD_READ_BYTES);
-      const lines = readFileRegionLines(filePath, offset, HEAD_READ_BYTES);
+      const offset = Math.max(0, stat.size - HISTORY_READ_BYTES);
+      const lines = readFileRegionLines(filePath, offset, HISTORY_READ_BYTES);
       const entries = parseJsonLines(lines.slice(-50));
 
       for (const entry of entries) {
@@ -257,7 +257,7 @@ export class ActivityTracker {
     try {
       const stat = fs.statSync(filePath);
 
-      const headLines = readFileRegionLines(filePath, 0, HEAD_READ_BYTES);
+      const headLines = readFileRegionLines(filePath, 0, HISTORY_READ_BYTES);
       const tailOffset = Math.max(0, stat.size - TAIL_READ_BYTES);
       const tailLines = tailOffset > 0 ? readFileRegionLines(filePath, tailOffset, TAIL_READ_BYTES) : [];
 
