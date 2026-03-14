@@ -24,7 +24,7 @@ Usage cost data is collected via the `openclaw gateway usage-cost` CLI command (
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 18+ (with TypeScript build tooling)
 - A running [OpenClaw](https://github.com/openclaw/openclaw) gateway
 
 ### Install & Run
@@ -33,7 +33,14 @@ Usage cost data is collected via the `openclaw gateway usage-cost` CLI command (
 git clone https://github.com/xingrz/openclaw-dashboard.git
 cd openclaw-dashboard
 npm install
-node server.js
+npm run build
+npm start
+```
+
+For development with auto-reload:
+
+```bash
+npm run dev
 ```
 
 The dashboard will be available at `http://localhost:3210`.
@@ -71,7 +78,7 @@ After=network.target
 Type=simple
 User=your-user
 WorkingDirectory=/path/to/openclaw-dashboard
-ExecStart=/usr/bin/node server.js
+ExecStart=/usr/bin/node dist/server.js
 Restart=always
 RestartSec=5
 Environment=PORT=3210

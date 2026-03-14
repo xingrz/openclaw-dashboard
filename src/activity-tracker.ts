@@ -1,0 +1,337 @@
+import fs from 'fs';
+import path from 'path';
+import { watch } from 'chokidar';
+import { config } from './config.js';
+import {
+  extractUserText,
+  extractAssistantSummary,
+  parseMessageContent,
+  readFileRegionLines,
+  parseJsonLines,
+} from './session-parser.js';
+
+const MAX_RECENT_ACTIVITY = 100;
+const HISTORY_LOOKBACK_MS = 24 * 3600 * 1000;
+const TASK_LOOKBACK_MS = 48 * 3600 * 1000;
+const HEAD_READ_BYTES = 128 * 1024;
+const TAIL_READ_BYTES = 64 * 1024;
+
+export interface ActivityItem {
+  type: 'tool_call' | 'message' | 'user_message';
+  ts: string;
+  session: string;
+  icon: string;
+  text?: string;
+  tool?: string;
+}
+
+export interface ActivityStats {
+  messages: number;
+  toolCalls: number;
+  errors: number;
+  lastActivityAt: string | null;
+}
+
+export interface TaskItem {
+  task: string;
+  startedAt: string;
+  lastActivityAt: string;
+  toolCount: number;
+  result: string | null;
+  sessionFile: string;
+}
+
+export interface ActivitySnapshot {
+  recent: ActivityItem[];
+  stats: ActivityStats;
+  hourlyActivity: number[];
+  tasks: TaskItem[];
+}
+
+interface FileState {
+  offset: number;
+}
+
+interface SessionFileInfo {
+  filePath: string;
+  mtime: number;
+}
+
+export class ActivityTracker {
+  private _fileOffsets = new Map<string, FileState>();
+  private _recentActivity: ActivityItem[] = [];
+  private _stats: ActivityStats = { messages: 0, toolCalls: 0, errors: 0, lastActivityAt: null };
+  private _hourlyActivity = new Array<number>(24).fill(0);
+
+  /** Start watching session log files for live activity. */
+  start(): void {
+    this._loadHistory();
+
+    // Use chokidar to watch for new and changed .jsonl files.
+    try {
+      const watcher = watch('*.jsonl', {
+        cwd: config.sessionsDir,
+        ignoreInitial: false,
+        awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
+      });
+
+      watcher.on('add', (relativePath) => {
+        const filePath = path.join(config.sessionsDir, relativePath);
+        this._initFile(filePath);
+      });
+
+      watcher.on('change', (relativePath) => {
+        const filePath = path.join(config.sessionsDir, relativePath);
+        this._readNewEntries(filePath);
+      });
+    } catch (err) {
+      console.error('[activity] Failed to start file watcher:', (err as Error).message);
+    }
+  }
+
+  /** Return a snapshot of current activity data for the dashboard. */
+  getSnapshot(): ActivitySnapshot {
+    return {
+      recent: this._recentActivity.slice(0, 30),
+      stats: { ...this._stats },
+      hourlyActivity: [...this._hourlyActivity],
+      tasks: this._extractTasks(),
+    };
+  }
+
+  // ── History Loading ──────────────────────────────────────
+
+  private _loadHistory(): void {
+    try {
+      const recentFiles = this._listSessionFiles(HISTORY_LOOKBACK_MS);
+      for (const { filePath } of recentFiles.slice(0, 5)) {
+        this._loadRecentFromFile(filePath);
+      }
+
+      this._recentActivity.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
+      this._recentActivity = this._recentActivity.slice(0, MAX_RECENT_ACTIVITY);
+      console.log(`[activity] Loaded ${this._recentActivity.length} historical events`);
+    } catch (err) {
+      console.error('[activity] History load error:', (err as Error).message);
+    }
+  }
+
+  private _loadRecentFromFile(filePath: string): void {
+    try {
+      const stat = fs.statSync(filePath);
+      const offset = Math.max(0, stat.size - HEAD_READ_BYTES);
+      const lines = readFileRegionLines(filePath, offset, HEAD_READ_BYTES);
+      const entries = parseJsonLines(lines.slice(-50));
+
+      for (const entry of entries) {
+        this._processEntry(entry, filePath);
+      }
+    } catch {
+      // File may have been removed or be unreadable.
+    }
+  }
+
+  // ── File Tracking ────────────────────────────────────────
+
+  private _initFile(filePath: string): void {
+    if (this._fileOffsets.has(filePath)) return;
+    try {
+      const stat = fs.statSync(filePath);
+      // Start tracking from end of file (only new entries from now on).
+      this._fileOffsets.set(filePath, { offset: stat.size });
+    } catch {
+      // File may not be accessible.
+    }
+  }
+
+  private _readNewEntries(filePath: string): void {
+    let state = this._fileOffsets.get(filePath);
+    if (!state) {
+      // File wasn't tracked yet; initialize and read from current position.
+      this._initFile(filePath);
+      state = this._fileOffsets.get(filePath);
+      if (!state) return;
+    }
+
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.size <= state.offset) {
+        state.offset = stat.size;
+        return;
+      }
+
+      const lines = readFileRegionLines(filePath, state.offset, TAIL_READ_BYTES);
+      state.offset = stat.size;
+
+      for (const entry of parseJsonLines(lines)) {
+        this._processEntry(entry, filePath);
+      }
+    } catch {
+      // File may have been truncated or removed.
+    }
+  }
+
+  // ── Entry Processing ─────────────────────────────────────
+
+  private _processEntry(entry: Record<string, unknown>, filePath: string): void {
+    if (entry.type !== 'message' || !entry.message) return;
+
+    const msg = entry.message as { role: string; content: unknown };
+    const ts = (entry.timestamp as string) || new Date().toISOString();
+    const sessionId = path.basename(filePath, '.jsonl').slice(0, 8);
+
+    this._recordTimestamp(ts);
+
+    if (msg.role === 'assistant') {
+      this._processAssistantMessage(msg, ts, sessionId);
+    } else if (msg.role === 'user') {
+      this._processUserMessage(msg, ts, sessionId);
+    }
+    // toolResult messages are intentionally skipped (too noisy).
+  }
+
+  private _processAssistantMessage(msg: Record<string, unknown>, ts: string, sessionId: string): void {
+    const { text, toolCalls } = parseMessageContent(msg as { role: string; content: string });
+
+    for (const tc of toolCalls) {
+      this._stats.toolCalls++;
+      this._addActivity({ type: 'tool_call', tool: tc.name, ts, session: sessionId, icon: '🔧' });
+    }
+
+    if (text) {
+      this._stats.messages++;
+      const summary = extractAssistantSummary(text, 100, 5);
+      this._addActivity({
+        type: 'message',
+        text: summary || text.slice(0, 80),
+        ts,
+        session: sessionId,
+        icon: toolCalls.length > 0 ? '🤖' : '💬',
+      });
+    }
+  }
+
+  private _processUserMessage(msg: Record<string, unknown>, ts: string, sessionId: string): void {
+    const { text: rawText } = parseMessageContent(msg as { role: string; content: string });
+    const text = extractUserText(rawText);
+
+    if (!text || text.startsWith('Read HEARTBEAT')) return;
+
+    this._stats.messages++;
+    this._addActivity({ type: 'user_message', text, ts, session: sessionId, icon: '👤' });
+  }
+
+  private _recordTimestamp(ts: string): void {
+    const hour = new Date(ts).getHours();
+    this._hourlyActivity[hour] = (this._hourlyActivity[hour] || 0) + 1;
+    this._stats.lastActivityAt = ts;
+  }
+
+  private _addActivity(activity: ActivityItem): void {
+    this._recentActivity.unshift(activity);
+    if (this._recentActivity.length > MAX_RECENT_ACTIVITY) {
+      this._recentActivity.pop();
+    }
+  }
+
+  // ── Task Extraction ──────────────────────────────────────
+
+  private _extractTasks(): TaskItem[] {
+    try {
+      const recentFiles = this._listSessionFiles(TASK_LOOKBACK_MS);
+      const tasks: TaskItem[] = [];
+
+      for (const { filePath } of recentFiles.slice(0, 8)) {
+        const task = this._extractTaskFromFile(filePath);
+        if (task) tasks.push(task);
+      }
+
+      tasks.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+      return tasks.slice(0, 15);
+    } catch {
+      return [];
+    }
+  }
+
+  private _extractTaskFromFile(filePath: string): TaskItem | null {
+    try {
+      const stat = fs.statSync(filePath);
+
+      const headLines = readFileRegionLines(filePath, 0, HEAD_READ_BYTES);
+      const tailOffset = Math.max(0, stat.size - TAIL_READ_BYTES);
+      const tailLines = tailOffset > 0 ? readFileRegionLines(filePath, tailOffset, TAIL_READ_BYTES) : [];
+
+      let firstUserMsg: { text: string; ts: string } | null = null;
+      let lastTs: string | null = null;
+      let totalToolCalls = 0;
+      let lastAssistantSummary = '';
+
+      for (const entry of parseJsonLines(headLines)) {
+        if (entry.type !== 'message') continue;
+        const msg = entry.message as Record<string, unknown>;
+        const ts = entry.timestamp as string;
+        lastTs = ts;
+
+        if ((msg as { role: string }).role === 'user' && !firstUserMsg) {
+          const { text: rawText } = parseMessageContent(msg as { role: string; content: string });
+          const text = extractUserText(rawText);
+          if (text && !text.startsWith('A new session was started')) {
+            firstUserMsg = { text, ts };
+          }
+        }
+
+        if ((msg as { role: string }).role === 'assistant') {
+          const { text, toolCalls } = parseMessageContent(msg as { role: string; content: string });
+          totalToolCalls += toolCalls.length;
+          const summary = extractAssistantSummary(text);
+          if (summary) lastAssistantSummary = summary;
+        }
+      }
+
+      for (const entry of parseJsonLines(tailLines)) {
+        if (entry.type !== 'message') continue;
+        if (entry.timestamp) lastTs = entry.timestamp as string;
+
+        const msg = entry.message as { role: string; content: string };
+        if (msg.role === 'assistant') {
+          const { text, toolCalls } = parseMessageContent(msg);
+          totalToolCalls += toolCalls.length;
+          const summary = extractAssistantSummary(text);
+          if (summary) lastAssistantSummary = summary;
+        }
+      }
+
+      if (!firstUserMsg) return null;
+
+      return {
+        task: firstUserMsg.text.slice(0, 120),
+        startedAt: firstUserMsg.ts,
+        lastActivityAt: lastTs || firstUserMsg.ts,
+        toolCount: totalToolCalls,
+        result: lastAssistantSummary || null,
+        sessionFile: path.basename(filePath, '.jsonl').slice(0, 8),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  // ── Utilities ────────────────────────────────────────────
+
+  private _listSessionFiles(lookbackMs: number): SessionFileInfo[] {
+    const files = fs.readdirSync(config.sessionsDir).filter((f) => f.endsWith('.jsonl'));
+    const cutoff = Date.now() - lookbackMs;
+
+    return files
+      .map((f): SessionFileInfo | null => {
+        const filePath = path.join(config.sessionsDir, f);
+        try {
+          return { filePath, mtime: fs.statSync(filePath).mtimeMs };
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry): entry is SessionFileInfo => entry !== null && entry.mtime > cutoff)
+      .sort((a, b) => b.mtime - a.mtime);
+  }
+}
