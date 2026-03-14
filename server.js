@@ -179,7 +179,7 @@ class GatewayClient {
     const clientId = 'gateway-client';
     const clientMode = 'backend';
     const role = 'operator';
-    const scopes = ['operator.read'];
+    const scopes = ['operator.read', 'operator.write', 'operator.admin'];
     const platform = 'linux';
     const deviceFamily = 'Linux';
 

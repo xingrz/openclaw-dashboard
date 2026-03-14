@@ -336,7 +336,9 @@ function renderAll(data) {
 // --- WebSocket ---
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const url = `${proto}://${location.host}/ws`;
+  // Detect base path from current URL (e.g., /dashboard/)
+  const basePath = location.pathname.replace(/\/+$/, '');
+  const url = `${proto}://${location.host}${basePath}/ws`;
 
   ws = new WebSocket(url);
   $('ws-status').textContent = 'WS: connecting...';
@@ -394,6 +396,7 @@ connectWS();
 // Fallback REST
 setTimeout(() => {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
-    fetch('/api/metrics').then(r => r.json()).then(renderAll).catch(() => {});
+    const apiBase = location.pathname.replace(/\/+$/, '');
+    fetch(apiBase + '/api/metrics').then(r => r.json()).then(renderAll).catch(() => {});
   }
 }, 5000);
