@@ -168,6 +168,7 @@ function renderSessions(d) {
   }).join('');
 }
 
+let _lastActivityKey = '';
 function renderActivity(d) {
   const activity = d.activity || {};
   const recent = activity.recent || [];
@@ -177,14 +178,52 @@ function renderActivity(d) {
   $('cnt-tools').textContent = stats.toolCalls || 0;
 
   const feed = $('activity-feed');
-  if (!recent.length) { feed.innerHTML = '<div class="empty">Waiting for activity...</div>'; return; }
-  feed.innerHTML = recent.map(a => {
-    const time = fmtTime(a.ts);
-    const text = a.text ? esc(a.text) : esc(a.tool || a.type);
-    const typeClass = a.type === 'tool_call' ? 'activity-tool' : a.type === 'user_message' ? 'activity-user' : 'activity-assistant';
-    return `<div class="activity-item ${typeClass}"><span class="activity-icon">${a.icon||'📌'}</span><span class="activity-time">${time}</span><span class="activity-text">${text}</span></div>`;
-  }).join('');
-  feed.scrollTop = 0;
+  if (!recent.length) { feed.innerHTML = '<div class="empty">Waiting for activity...</div>'; _lastActivityKey = ''; return; }
+
+  // Build a key from first few items to detect changes
+  const newKey = recent.slice(0, 5).map(a => a.ts + a.type).join('|');
+  if (newKey === _lastActivityKey) return; // No change, skip re-render
+
+  // Find how many new items were added at the top
+  const existingItems = feed.querySelectorAll('.activity-item');
+  const existingFirstTs = existingItems[0]?.dataset?.ts;
+  let newCount = 0;
+  if (existingFirstTs) {
+    for (let i = 0; i < recent.length; i++) {
+      if (recent[i].ts === existingFirstTs) break;
+      newCount++;
+    }
+  } else {
+    newCount = recent.length; // First render
+  }
+
+  if (newCount === 0 && existingItems.length > 0) {
+    _lastActivityKey = newKey;
+    return; // Nothing new
+  }
+
+  if (newCount > 0 && newCount < recent.length && existingItems.length > 0) {
+    // Prepend only new items (no animation flash on existing)
+    const fragment = document.createDocumentFragment();
+    for (let i = newCount - 1; i >= 0; i--) {
+      const a = recent[i];
+      const div = document.createElement('div');
+      div.className = 'activity-item ' + (a.type === 'tool_call' ? 'activity-tool' : a.type === 'user_message' ? 'activity-user' : 'activity-assistant');
+      div.dataset.ts = a.ts;
+      div.innerHTML = `<span class="activity-icon">${a.icon||'📌'}</span><span class="activity-time">${fmtTime(a.ts)}</span><span class="activity-text">${esc(a.text || a.tool || a.type)}</span>`;
+      fragment.appendChild(div);
+    }
+    feed.insertBefore(fragment, feed.firstChild);
+    // Trim excess items
+    while (feed.children.length > 50) feed.removeChild(feed.lastChild);
+  } else {
+    // Full re-render (first load or major change)
+    feed.innerHTML = recent.map(a => {
+      const typeClass = a.type === 'tool_call' ? 'activity-tool' : a.type === 'user_message' ? 'activity-user' : 'activity-assistant';
+      return `<div class="activity-item ${typeClass}" data-ts="${esc(a.ts)}"><span class="activity-icon">${a.icon||'📌'}</span><span class="activity-time">${fmtTime(a.ts)}</span><span class="activity-text">${esc(a.text || a.tool || a.type)}</span></div>`;
+    }).join('');
+  }
+  _lastActivityKey = newKey;
 
   // Hourly heatmap
   const hourly = activity.hourlyActivity || new Array(24).fill(0);
