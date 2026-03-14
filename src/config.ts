@@ -3,7 +3,8 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OPENCLAW_HOME = path.join(process.env.HOME!, '.openclaw');
+const HOME = process.env.HOME || process.env.USERPROFILE || '/root';
+const OPENCLAW_HOME = path.join(HOME, '.openclaw');
 
 export const config = {
   port: Number(process.env.PORT) || 3210,
