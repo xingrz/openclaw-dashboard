@@ -9,7 +9,7 @@ const OPENCLAW_HOME = path.join(HOME, '.openclaw');
 export const config = {
   port: Number(process.env.PORT) || 3210,
   gwPort: Number(process.env.GW_PORT || process.env.OPENCLAW_GATEWAY_PORT) || 18789,
-  identityFile: path.join(__dirname, '..', '.device-identity.json'),
+  identityFile: path.join(process.cwd(), '.device-identity.json'),
   sessionsDir: path.join(OPENCLAW_HOME, 'agents/main/sessions'),
   gwToken: resolveGatewayToken(),
 } as const;
