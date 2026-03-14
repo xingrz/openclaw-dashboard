@@ -24,7 +24,7 @@ Usage cost data is collected via the `openclaw gateway usage-cost` CLI command (
 
 ### Prerequisites
 
-- Node.js 18+ (with TypeScript build tooling)
+- Node.js 18+
 - A running [OpenClaw](https://github.com/openclaw/openclaw) gateway
 
 ### Install & Run
@@ -37,13 +37,32 @@ npm run build
 npm start
 ```
 
-For development with auto-reload:
+The dashboard will be available at `http://localhost:3210`.
+
+### Development
+
+Frontend and backend run separately during development:
 
 ```bash
-npm run dev
+# Terminal 1: backend server (auto-reloads on changes)
+npm run dev:server
+
+# Terminal 2: Vite dev server with HMR (proxies API/WS to backend)
+npm run dev:web
 ```
 
-The dashboard will be available at `http://localhost:3210`.
+The Vite dev server runs on `http://localhost:5173` with hot module replacement.
+
+### Project Structure
+
+```
+packages/
+  server/    — Express + WebSocket backend (TypeScript)
+  web/       — React + Vite frontend (TypeScript)
+dist/        — Single build output
+  server.js  — Compiled server
+  public/    — Vite-built frontend assets
+```
 
 ### Environment Variables
 
