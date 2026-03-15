@@ -1,5 +1,6 @@
 import { useClock } from '../hooks/useClock';
 import type { DashboardMetrics, ChannelHealth } from '../lib/types';
+import { HeaderStatusGroup } from './HeaderStatusGroup';
 
 interface HeaderProps {
   data: DashboardMetrics | null;
@@ -21,10 +22,30 @@ export function Header({ data }: HeaderProps) {
     healthLabel = health.ok ? 'HEALTHY' : 'DEGRADED';
   }
 
-  const channelEntries = Object.entries(health?.channels ?? {});
+  const channelItems = Object.entries(health?.channels ?? {}).map(([name, ch]) => {
+    const { probe, configured } = ch as ChannelHealth;
+    const ok = probe?.ok || configured;
+    const label = health?.channelLabels?.[name] ?? name;
+
+    return {
+      key: name,
+      label,
+      tone: ok ? ('ok' as const) : ('error' as const),
+    };
+  });
 
   const activePresence = presence.filter((p) => p.reason !== 'disconnect');
   const shownPresence = activePresence.length > 0 ? activePresence : presence;
+  const deviceItems = shownPresence.map((p, i) => {
+    const isActive = p.reason !== 'disconnect';
+    const label = p.host || p.deviceId?.slice(0, 12) || '?';
+
+    return {
+      key: p.deviceId ?? `${label}-${i}`,
+      label,
+      tone: isActive ? ('active' as const) : ('inactive' as const),
+    };
+  });
 
   return (
     <header className="header">
@@ -50,31 +71,8 @@ export function Header({ data }: HeaderProps) {
         </div>
       </div>
       <div className="header-mid">
-        <div className="inline-status">
-          {channelEntries.map(([name, ch]) => {
-            const { probe, configured } = ch as ChannelHealth;
-            const ok = probe?.ok || configured;
-            const label = health?.channelLabels?.[name] ?? name;
-            return (
-              <span key={name} className="inline-item">
-                <span className={`inline-dot ${ok ? 'ok' : 'error'}`} />
-                <span className="inline-name">{label}</span>
-              </span>
-            );
-          })}
-        </div>
-        <div className="inline-status">
-          {shownPresence.map((p, i) => {
-            const isActive = p.reason !== 'disconnect';
-            const name = p.host || p.deviceId?.slice(0, 12) || '?';
-            return (
-              <span key={p.deviceId ?? i} className="inline-item">
-                <span className={`inline-dot ${isActive ? 'active' : 'inactive'}`} />
-                <span className="inline-name">{name}</span>
-              </span>
-            );
-          })}
-        </div>
+        <HeaderStatusGroup items={channelItems} emptyLabel="No channels" title="Channels" />
+        <HeaderStatusGroup items={deviceItems} emptyLabel="No devices" title="Devices" />
       </div>
       <div className="header-right">
         <div className={`status-indicator ${healthClass}`}>
