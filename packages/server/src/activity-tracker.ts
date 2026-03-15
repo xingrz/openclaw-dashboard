@@ -99,6 +99,8 @@ export class ActivityTracker {
   }
 
   async getSnapshot(): Promise<ActivitySnapshot> {
+    this._syncRecentFiles();
+
     return {
       recent: this._recentActivity.slice(0, 30),
       stats: { ...this._stats },
@@ -132,6 +134,8 @@ export class ActivityTracker {
       for (const entry of entries) {
         this._processEntry(entry, filePath);
       }
+
+      this._fileOffsets.set(filePath, { offset: stat.size });
     } catch {
       // ignore unreadable history files
     }
@@ -150,7 +154,7 @@ export class ActivityTracker {
   private _readNewEntries(filePath: string): void {
     let state = this._fileOffsets.get(filePath);
     if (!state) {
-      this._initFile(filePath);
+      this._loadRecentFromFile(filePath);
       state = this._fileOffsets.get(filePath);
       if (!state) return;
     }
@@ -239,6 +243,17 @@ export class ActivityTracker {
     this._recentActivity.unshift(activity);
     if (this._recentActivity.length > MAX_RECENT_ACTIVITY) {
       this._recentActivity.pop();
+    }
+  }
+
+  private _syncRecentFiles(): void {
+    try {
+      const recentFiles = this._listSessionFiles(HISTORY_LOOKBACK_MS);
+      for (const { filePath } of recentFiles.slice(0, 8)) {
+        this._readNewEntries(filePath);
+      }
+    } catch {
+      // ignore sync failures
     }
   }
 
