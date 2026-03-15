@@ -56,7 +56,7 @@ export function Header({ data }: HeaderProps) {
             const ok = probe?.ok || configured;
             const label = health?.channelLabels?.[name] ?? name;
             return (
-              <span key={name}>
+              <span key={name} className="inline-item">
                 <span className={`inline-dot ${ok ? 'ok' : 'error'}`} />
                 <span className="inline-name">{label}</span>
               </span>
@@ -68,7 +68,7 @@ export function Header({ data }: HeaderProps) {
             const isActive = p.reason !== 'disconnect';
             const name = p.host || p.deviceId?.slice(0, 12) || '?';
             return (
-              <span key={p.deviceId ?? i}>
+              <span key={p.deviceId ?? i} className="inline-item">
                 <span className={`inline-dot ${isActive ? 'active' : 'inactive'}`} />
                 <span className="inline-name">{name}</span>
               </span>

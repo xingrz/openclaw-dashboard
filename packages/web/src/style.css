@@ -161,6 +161,12 @@ body {
   font-size: 0.65em;
 }
 
+.inline-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .inline-dot {
   width: 6px;
   height: 6px;
