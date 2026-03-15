@@ -3,11 +3,13 @@ import path from 'path';
 import { watch } from 'chokidar';
 import { config } from './config.js';
 import {
-  extractUserText,
   extractAssistantSummary,
+  extractUserText,
+  isDashboardSummaryPrompt,
+  isDashboardSummaryResult,
+  parseJsonLines,
   parseMessageContent,
   readFileRegionLines,
-  parseJsonLines,
 } from './session-parser.js';
 
 const MAX_RECENT_ACTIVITY = 100;
@@ -67,11 +69,9 @@ export class ActivityTracker {
   private _stats: ActivityStats = { messages: 0, toolCalls: 0, errors: 0, lastActivityAt: null };
   private _hourlyActivity = new Array<number>(24).fill(0);
 
-  /** Start watching session log files for live activity. */
   start(): void {
     this._loadHistory();
 
-    // Use chokidar to watch for new and changed .jsonl files.
     try {
       const watcher = watch('*.jsonl', {
         cwd: config.sessionsDir,
@@ -93,7 +93,6 @@ export class ActivityTracker {
     }
   }
 
-  /** Return a snapshot of current activity data for the dashboard. */
   getSnapshot(): ActivitySnapshot {
     return {
       recent: this._recentActivity.slice(0, 30),
@@ -102,8 +101,6 @@ export class ActivityTracker {
       tasks: this._extractTasks(),
     };
   }
-
-  // ── History Loading ──────────────────────────────────────
 
   private _loadHistory(): void {
     try {
@@ -131,27 +128,23 @@ export class ActivityTracker {
         this._processEntry(entry, filePath);
       }
     } catch {
-      // File may have been removed or be unreadable.
+      // ignore unreadable history files
     }
   }
-
-  // ── File Tracking ────────────────────────────────────────
 
   private _initFile(filePath: string): void {
     if (this._fileOffsets.has(filePath)) return;
     try {
       const stat = fs.statSync(filePath);
-      // Start tracking from end of file (only new entries from now on).
       this._fileOffsets.set(filePath, { offset: stat.size });
     } catch {
-      // File may not be accessible.
+      // ignore inaccessible files
     }
   }
 
   private _readNewEntries(filePath: string): void {
     let state = this._fileOffsets.get(filePath);
     if (!state) {
-      // File wasn't tracked yet; initialize and read from current position.
       this._initFile(filePath);
       state = this._fileOffsets.get(filePath);
       if (!state) return;
@@ -171,11 +164,9 @@ export class ActivityTracker {
         this._processEntry(entry, filePath);
       }
     } catch {
-      // File may have been truncated or removed.
+      // ignore truncated/removed files
     }
   }
-
-  // ── Entry Processing ─────────────────────────────────────
 
   private _processEntry(entry: Record<string, unknown>, filePath: string): void {
     if (entry.type !== 'message' || !entry.message) return;
@@ -191,11 +182,11 @@ export class ActivityTracker {
     } else if (msg.role === 'user') {
       this._processUserMessage(msg, ts, sessionId);
     }
-    // toolResult messages are intentionally skipped (too noisy).
   }
 
   private _processAssistantMessage(msg: Record<string, unknown>, ts: string, sessionId: string): void {
     const { text, toolCalls } = parseMessageContent(msg as { role: string; content: string });
+    if (isDashboardSummaryPrompt(text) || isDashboardSummaryResult(text)) return;
 
     for (const tc of toolCalls) {
       this._stats.toolCalls++;
@@ -217,8 +208,9 @@ export class ActivityTracker {
 
   private _processUserMessage(msg: Record<string, unknown>, ts: string, sessionId: string): void {
     const { text: rawText } = parseMessageContent(msg as { role: string; content: string });
-    const text = extractUserText(rawText);
+    if (isDashboardSummaryPrompt(rawText)) return;
 
+    const text = extractUserText(rawText);
     if (!text || text.startsWith('Read HEARTBEAT')) return;
 
     this._stats.messages++;
@@ -237,8 +229,6 @@ export class ActivityTracker {
       this._recentActivity.pop();
     }
   }
-
-  // ── Task Extraction ──────────────────────────────────────
 
   private _extractTasks(): TaskItem[] {
     try {
@@ -260,7 +250,6 @@ export class ActivityTracker {
   private _extractTaskFromFile(filePath: string): TaskItem | null {
     try {
       const stat = fs.statSync(filePath);
-
       const headLines = readFileRegionLines(filePath, 0, HISTORY_READ_BYTES);
       const tailOffset = Math.max(0, stat.size - TAIL_READ_BYTES);
       const tailLines = tailOffset > 0 ? readFileRegionLines(filePath, tailOffset, TAIL_READ_BYTES) : [];
@@ -286,6 +275,7 @@ export class ActivityTracker {
 
         if ((msg as { role: string }).role === 'assistant') {
           const { text, toolCalls } = parseMessageContent(msg as { role: string; content: string });
+          if (isDashboardSummaryPrompt(text) || isDashboardSummaryResult(text)) continue;
           totalToolCalls += toolCalls.length;
           const summary = extractAssistantSummary(text);
           if (summary) lastAssistantSummary = summary;
@@ -299,6 +289,7 @@ export class ActivityTracker {
         const msg = entry.message as { role: string; content: string };
         if (msg.role === 'assistant') {
           const { text, toolCalls } = parseMessageContent(msg);
+          if (isDashboardSummaryPrompt(text) || isDashboardSummaryResult(text)) continue;
           totalToolCalls += toolCalls.length;
           const summary = extractAssistantSummary(text);
           if (summary) lastAssistantSummary = summary;
@@ -319,8 +310,6 @@ export class ActivityTracker {
       return null;
     }
   }
-
-  // ── Utilities ────────────────────────────────────────────
 
   private _listSessionFiles(lookbackMs: number, options?: { includeResetArchives?: boolean }): SessionFileInfo[] {
     const includeResetArchives = options?.includeResetArchives ?? false;

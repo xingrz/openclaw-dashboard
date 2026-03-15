@@ -8,9 +8,16 @@ const SYSTEM_NOISE_PATTERNS: RegExp[] = [
   /^System:.*$/gm,
   /^Conversation info.*$/gm,
   /^Sender.*$/gm,
+  /^To send an image back,.*$/gm,
+  /^If you must inline,.*$/gm,
+  /^Avoid absolute paths.*$/gm,
+  /^Current time:.*$/gm,
   /```json[\s\S]*?```/g,
   /\[media attached:.*?\]/g,
   /\[image data.*?\]/g,
+  /\[\[[^\]]+\]\]/g,
+  /\bNO_REPLY\b/g,
+  /\bHEARTBEAT_OK\b/g,
 ];
 
 export interface ParsedContent {
@@ -39,11 +46,25 @@ interface ContentPart {
 /**
  * Clean system noise from user message text and return the first meaningful line.
  */
-export function extractUserText(raw: string, maxLen = 100): string {
+export function isDashboardSummaryPrompt(raw: string): boolean {
+  return /你在为监控大屏生成任务标题|JSON 格式必须是 \{"items"|dashboard-task-summarizer|请只输出JSON/u.test(raw);
+}
+
+export function isDashboardSummaryResult(raw: string): boolean {
+  return /"items"\s*:\s*\[/u.test(raw) && /"title"\s*:/u.test(raw);
+}
+
+export function stripSystemNoise(raw: string): string {
   let text = raw;
   for (const pattern of SYSTEM_NOISE_PATTERNS) {
     text = text.replace(pattern, '');
   }
+
+  return text.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+export function extractUserText(raw: string, maxLen = 100): string {
+  const text = stripSystemNoise(raw);
 
   return text
     .split('\n')
@@ -57,7 +78,7 @@ export function extractUserText(raw: string, maxLen = 100): string {
  * Skips headings, code fences, tables, and list items.
  */
 export function extractAssistantSummary(fullText: string, maxLen = 80, minLen = 8): string {
-  return fullText
+  return stripSystemNoise(fullText)
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith('#') && !l.startsWith('```') && !l.startsWith('|') && !l.startsWith('-') && l.length > minLen)[0]
@@ -82,6 +103,10 @@ export function parseMessageContent(msg: Message): ParsedContent {
   }
 
   if (msg.role === 'assistant') {
+    if (typeof msg.content === 'string') {
+      return { text: msg.content, toolCalls: [] };
+    }
+
     const content = Array.isArray(msg.content) ? msg.content : [];
     const toolCalls = content.filter((c) => c.type === 'toolCall') as ToolCall[];
     const text = content.filter((c) => c.type === 'text').map((p) => p.text ?? '').join('');
