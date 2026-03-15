@@ -63,8 +63,12 @@ interface SessionFileInfo {
   mtime: number;
 }
 
+function getSessionBaseId(filePath: string): string {
+  return path.basename(filePath).replace(/\.jsonl(?:\.(?:reset|deleted)\..+)?$/, '');
+}
+
 function getSessionDisplayId(filePath: string): string {
-  return path.basename(filePath).replace(/\.jsonl(?:\.(?:reset|deleted)\..+)?$/, '').slice(0, 8);
+  return getSessionBaseId(filePath).slice(0, 8);
 }
 
 export class ActivityTracker {
@@ -261,10 +265,16 @@ export class ActivityTracker {
     try {
       const recentFiles = this._listSessionFiles(TASK_LOOKBACK_MS, { includeResetArchives: true });
       const tasks: TaskItem[] = [];
-      const maxScannedFiles = 64;
+      const maxScannedFiles = 96;
       const maxCollectedTasks = 24;
+      const seenSessions = new Set<string>();
 
-      for (const { filePath } of recentFiles.slice(0, maxScannedFiles)) {
+      for (const { filePath } of recentFiles) {
+        const sessionId = getSessionBaseId(filePath);
+        if (seenSessions.has(sessionId)) continue;
+        seenSessions.add(sessionId);
+        if (seenSessions.size > maxScannedFiles) break;
+
         const task = this._extractTaskFromFile(filePath);
         if (!task) continue;
         tasks.push(task);
