@@ -28,6 +28,7 @@ export interface ParsedContent {
 export interface ToolCall {
   type: string;
   name: string;
+  arguments?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -89,6 +90,51 @@ export function extractAssistantSummary(fullText: string, maxLen = 80, minLen = 
  * Parse text content and tool calls from a message object.
  * Handles both string and structured content arrays.
  */
+function shortPath(value: unknown): string | null {
+  if (typeof value !== 'string' || !value) return null;
+  return value.replace(/^.*\.openclaw\/workspace\//, '').replace(/^.*\//, (m) => (m.length > 40 ? '…/' : m));
+}
+
+function shortText(value: unknown, maxLen = 72): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value.replace(/\s+/g, ' ').trim();
+  return text ? text.slice(0, maxLen) : null;
+}
+
+export function summarizeToolCall(tool: ToolCall): string {
+  const args = (tool.arguments ?? {}) as Record<string, unknown>;
+  const path = shortPath(args.file_path ?? args.path);
+
+  switch (tool.name) {
+    case 'read':
+      return path ? `读取 ${path}` : '读取文件';
+    case 'edit':
+      return path ? `修改 ${path}` : '编辑文件';
+    case 'write':
+      return path ? `写入 ${path}` : '写入文件';
+    case 'exec': {
+      const command = shortText(args.command, 96);
+      return command ? `执行 ${command}` : '执行命令';
+    }
+    case 'web_search': {
+      const query = shortText(args.query, 64);
+      return query ? `搜索 ${query}` : '搜索网页';
+    }
+    case 'web_fetch': {
+      const url = shortText(args.url, 72);
+      return url ? `抓取 ${url}` : '抓取网页';
+    }
+    case 'memory_search': {
+      const query = shortText(args.query, 64);
+      return query ? `检索记忆：${query}` : '检索记忆';
+    }
+    case 'memory_get':
+      return path ? `读取记忆 ${path}` : '读取记忆';
+    default:
+      return tool.name;
+  }
+}
+
 export function parseMessageContent(msg: Message): ParsedContent {
   if (msg.role === 'user') {
     let text: string;

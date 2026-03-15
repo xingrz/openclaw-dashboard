@@ -10,6 +10,7 @@ import {
   parseJsonLines,
   parseMessageContent,
   readFileRegionLines,
+  summarizeToolCall,
 } from './session-parser.js';
 
 const MAX_RECENT_ACTIVITY = 100;
@@ -190,7 +191,14 @@ export class ActivityTracker {
 
     for (const tc of toolCalls) {
       this._stats.toolCalls++;
-      this._addActivity({ type: 'tool_call', tool: tc.name, ts, session: sessionId, icon: '🔧' });
+      this._addActivity({
+        type: 'tool_call',
+        tool: tc.name,
+        text: summarizeToolCall(tc),
+        ts,
+        session: sessionId,
+        icon: '🔧',
+      });
     }
 
     if (text) {
