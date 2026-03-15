@@ -261,10 +261,14 @@ export class ActivityTracker {
     try {
       const recentFiles = this._listSessionFiles(TASK_LOOKBACK_MS, { includeResetArchives: true });
       const tasks: TaskItem[] = [];
+      const maxScannedFiles = 64;
+      const maxCollectedTasks = 24;
 
-      for (const { filePath } of recentFiles.slice(0, 8)) {
+      for (const { filePath } of recentFiles.slice(0, maxScannedFiles)) {
         const task = this._extractTaskFromFile(filePath);
-        if (task) tasks.push(task);
+        if (!task) continue;
+        tasks.push(task);
+        if (tasks.length >= maxCollectedTasks) break;
       }
 
       await this._taskSummarizer.ensureSummaries(tasks.map((task) => ({ key: task.key, task: task.task })));
