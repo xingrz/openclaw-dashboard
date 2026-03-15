@@ -57,6 +57,10 @@ interface SessionFileInfo {
   mtime: number;
 }
 
+function getSessionDisplayId(filePath: string): string {
+  return path.basename(filePath).replace(/\.jsonl(?:\.(?:reset|deleted)\..+)?$/, '').slice(0, 8);
+}
+
 export class ActivityTracker {
   private _fileOffsets = new Map<string, FileState>();
   private _recentActivity: ActivityItem[] = [];
@@ -178,7 +182,7 @@ export class ActivityTracker {
 
     const msg = entry.message as { role: string; content: unknown };
     const ts = (entry.timestamp as string) || new Date().toISOString();
-    const sessionId = path.basename(filePath, '.jsonl').slice(0, 8);
+    const sessionId = getSessionDisplayId(filePath);
 
     this._recordTimestamp(ts);
 
@@ -238,7 +242,7 @@ export class ActivityTracker {
 
   private _extractTasks(): TaskItem[] {
     try {
-      const recentFiles = this._listSessionFiles(TASK_LOOKBACK_MS);
+      const recentFiles = this._listSessionFiles(TASK_LOOKBACK_MS, { includeResetArchives: true });
       const tasks: TaskItem[] = [];
 
       for (const { filePath } of recentFiles.slice(0, 8)) {
@@ -246,7 +250,7 @@ export class ActivityTracker {
         if (task) tasks.push(task);
       }
 
-      tasks.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+      tasks.sort((a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime());
       return tasks.slice(0, 15);
     } catch {
       return [];
@@ -309,7 +313,7 @@ export class ActivityTracker {
         lastActivityAt: lastTs || firstUserMsg.ts,
         toolCount: totalToolCalls,
         result: lastAssistantSummary || null,
-        sessionFile: path.basename(filePath, '.jsonl').slice(0, 8),
+        sessionFile: getSessionDisplayId(filePath),
       };
     } catch {
       return null;
@@ -318,8 +322,13 @@ export class ActivityTracker {
 
   // ── Utilities ────────────────────────────────────────────
 
-  private _listSessionFiles(lookbackMs: number): SessionFileInfo[] {
-    const files = fs.readdirSync(config.sessionsDir).filter((f) => f.endsWith('.jsonl'));
+  private _listSessionFiles(lookbackMs: number, options?: { includeResetArchives?: boolean }): SessionFileInfo[] {
+    const includeResetArchives = options?.includeResetArchives ?? false;
+    const files = fs.readdirSync(config.sessionsDir).filter((f) => {
+      if (f.endsWith('.jsonl')) return true;
+      if (includeResetArchives && /\.jsonl\.reset\./.test(f)) return true;
+      return false;
+    });
     const cutoff = Date.now() - lookbackMs;
 
     return files
