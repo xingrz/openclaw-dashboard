@@ -20,40 +20,7 @@ The dashboard server connects directly to the OpenClaw Gateway via its **WebSock
 
 Usage cost data is collected via the `openclaw gateway usage-cost` CLI command (no RPC method available yet).
 
-## Setup
-
-### Prerequisites
-
-- Node.js 18+
-- A running [OpenClaw](https://github.com/openclaw/openclaw) gateway
-
-### Install & Run
-
-```bash
-git clone https://github.com/xingrz/openclaw-dashboard.git
-cd openclaw-dashboard
-npm install
-npm run build
-npm start
-```
-
-The dashboard will be available at `http://localhost:3210`.
-
-### Development
-
-Frontend and backend run separately during development:
-
-```bash
-# Terminal 1: backend server (auto-reloads on changes)
-npm run dev:server
-
-# Terminal 2: Vite dev server with HMR (proxies API/WS to backend)
-npm run dev:web
-```
-
-The Vite dev server runs on `http://localhost:5173` with hot module replacement.
-
-### Project Structure
+## Project Structure
 
 ```
 packages/
@@ -64,6 +31,36 @@ dist/        — Single build output
   public/    — Vite-built frontend assets
 ```
 
+## Deployment
+
+### Prerequisites
+
+- Node.js 18+
+- A running [OpenClaw](https://github.com/openclaw/openclaw) gateway on the same machine
+
+The dashboard connects to the OpenClaw Gateway at `127.0.0.1:18789` (configurable via `GW_PORT`). Both services must run on the same host.
+
+### Build
+
+```bash
+git clone https://github.com/xingrz/openclaw-dashboard.git
+cd openclaw-dashboard
+npm install
+npm run build
+```
+
+This produces a single `dist/` directory containing the compiled server and frontend assets.
+
+### Run
+
+```bash
+npm start
+# or directly:
+node dist/server.js
+```
+
+The dashboard listens on `http://127.0.0.1:3210` by default. It only binds to localhost — use a reverse proxy to expose it externally.
+
 ### Environment Variables
 
 | Variable | Default | Description |
@@ -72,11 +69,13 @@ dist/        — Single build output
 | `GW_PORT` | `18789` | Gateway WebSocket port |
 | `OPENCLAW_GATEWAY_TOKEN` | *(auto-detected)* | Gateway auth token |
 
-The gateway token is auto-detected from `~/.openclaw/openclaw.json` if not set via environment variable.
+The gateway token is auto-detected from `~/.openclaw/openclaw.json` if not set.
 
-### Reverse Proxy (Caddy)
+### Reverse Proxy
 
-To serve the dashboard under a subpath:
+The dashboard binds to `127.0.0.1` only. Use a reverse proxy to serve it over HTTPS or on a public interface.
+
+**Caddy:**
 
 ```caddyfile
 your.domain {
@@ -85,6 +84,20 @@ your.domain {
     }
 }
 ```
+
+**nginx:**
+
+```nginx
+location /dashboard/ {
+    proxy_pass http://127.0.0.1:3210/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+}
+```
+
+> **Note:** The `proxy_set_header Upgrade` / `Connection` directives are required for WebSocket support.
 
 ### systemd Service
 
@@ -112,6 +125,20 @@ sudo cp openclaw-dashboard.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now openclaw-dashboard
 ```
+
+## Development
+
+Frontend and backend run separately during development:
+
+```bash
+# Terminal 1: backend server (auto-reloads on changes)
+npm run dev:server
+
+# Terminal 2: Vite dev server with HMR (proxies API/WS to backend)
+npm run dev:web
+```
+
+The Vite dev server runs on `http://localhost:5173` with hot module replacement.
 
 ## License
 
