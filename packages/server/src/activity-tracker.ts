@@ -12,6 +12,7 @@ import {
   readFileRegionLines,
   summarizeToolCall,
 } from './session-parser.js';
+import { TaskSummarizer } from './task-summarizer.js';
 
 const MAX_RECENT_ACTIVITY = 100;
 const HISTORY_LOOKBACK_MS = 24 * 3600 * 1000;
@@ -36,6 +37,8 @@ export interface ActivityStats {
 }
 
 export interface TaskItem {
+  key: string;
+  title: string;
   task: string;
   startedAt: string;
   lastActivityAt: string;
@@ -69,6 +72,7 @@ export class ActivityTracker {
   private _recentActivity: ActivityItem[] = [];
   private _stats: ActivityStats = { messages: 0, toolCalls: 0, errors: 0, lastActivityAt: null };
   private _hourlyActivity = new Array<number>(24).fill(0);
+  private _taskSummarizer = new TaskSummarizer();
 
   start(): void {
     this._loadHistory();
@@ -94,12 +98,12 @@ export class ActivityTracker {
     }
   }
 
-  getSnapshot(): ActivitySnapshot {
+  async getSnapshot(): Promise<ActivitySnapshot> {
     return {
       recent: this._recentActivity.slice(0, 30),
       stats: { ...this._stats },
       hourlyActivity: [...this._hourlyActivity],
-      tasks: this._extractTasks(),
+      tasks: await this._extractTasks(),
     };
   }
 
@@ -238,7 +242,7 @@ export class ActivityTracker {
     }
   }
 
-  private _extractTasks(): TaskItem[] {
+  private async _extractTasks(): Promise<TaskItem[]> {
     try {
       const recentFiles = this._listSessionFiles(TASK_LOOKBACK_MS, { includeResetArchives: true });
       const tasks: TaskItem[] = [];
@@ -246,6 +250,12 @@ export class ActivityTracker {
       for (const { filePath } of recentFiles.slice(0, 8)) {
         const task = this._extractTaskFromFile(filePath);
         if (task) tasks.push(task);
+      }
+
+      await this._taskSummarizer.ensureSummaries(tasks.map((task) => ({ key: task.key, task: task.task })));
+
+      for (const task of tasks) {
+        task.title = this._taskSummarizer.getTitle(task.key) ?? '正在整理任务摘要';
       }
 
       tasks.sort((a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime());
@@ -262,10 +272,12 @@ export class ActivityTracker {
       const tailOffset = Math.max(0, stat.size - TAIL_READ_BYTES);
       const tailLines = tailOffset > 0 ? readFileRegionLines(filePath, tailOffset, TAIL_READ_BYTES) : [];
 
-      let firstUserMsg: { text: string; ts: string } | null = null;
+      const initialUserTexts: string[] = [];
+      let firstUserTs: string | null = null;
       let lastTs: string | null = null;
       let totalToolCalls = 0;
       let lastAssistantSummary = '';
+      let sawAssistantAfterUser = false;
 
       for (const entry of parseJsonLines(headLines)) {
         if (entry.type !== 'message') continue;
@@ -273,17 +285,22 @@ export class ActivityTracker {
         const ts = entry.timestamp as string;
         lastTs = ts;
 
-        if ((msg as { role: string }).role === 'user' && !firstUserMsg) {
+        if ((msg as { role: string }).role === 'user' && !sawAssistantAfterUser) {
           const { text: rawText } = parseMessageContent(msg as { role: string; content: string });
-          const text = extractUserText(rawText);
+          if (isDashboardSummaryPrompt(rawText)) continue;
+
+          const text = extractUserText(rawText, 160);
           if (text && !text.startsWith('A new session was started')) {
-            firstUserMsg = { text, ts };
+            if (!firstUserTs) firstUserTs = ts;
+            if (initialUserTexts.length < 3) initialUserTexts.push(text);
           }
         }
 
         if ((msg as { role: string }).role === 'assistant') {
+          if (initialUserTexts.length > 0) sawAssistantAfterUser = true;
           const { text, toolCalls } = parseMessageContent(msg as { role: string; content: string });
           if (isDashboardSummaryPrompt(text) || isDashboardSummaryResult(text)) continue;
+
           totalToolCalls += toolCalls.length;
           const summary = extractAssistantSummary(text);
           if (summary) lastAssistantSummary = summary;
@@ -304,15 +321,21 @@ export class ActivityTracker {
         }
       }
 
-      if (!firstUserMsg) return null;
+      if (initialUserTexts.length === 0 || !firstUserTs) return null;
+
+      const taskText = initialUserTexts.join(' ').slice(0, 220);
+      const result = lastAssistantSummary || null;
+      const sessionFile = getSessionDisplayId(filePath);
 
       return {
-        task: firstUserMsg.text.slice(0, 120),
-        startedAt: firstUserMsg.ts,
-        lastActivityAt: lastTs || firstUserMsg.ts,
+        key: sessionFile,
+        title: '正在整理任务摘要',
+        task: taskText,
+        startedAt: firstUserTs,
+        lastActivityAt: lastTs || firstUserTs,
         toolCount: totalToolCalls,
-        result: lastAssistantSummary || null,
-        sessionFile: getSessionDisplayId(filePath),
+        result,
+        sessionFile,
       };
     } catch {
       return null;

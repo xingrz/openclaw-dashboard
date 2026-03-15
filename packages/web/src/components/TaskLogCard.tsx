@@ -38,11 +38,12 @@ function TaskRow({ task: t }: { task: TaskItem }) {
     <div className={`task-item ${statusClass}`}>
       <div className="task-header">
         <span className="task-time">{fmtTime(t.startedAt)}</span>
+        <span className="task-title">{t.title}</span>
         {t.toolCount > 0 && <span className="task-tools">🔧 {t.toolCount}</span>}
         <span className="task-status">{statusLabel}</span>
       </div>
       <div className="task-desc">{t.task}</div>
-      {t.result && <div className="task-result">→ {t.result}</div>}
+      {t.result && <div className="task-result">{t.result}</div>}
     </div>
   );
 }

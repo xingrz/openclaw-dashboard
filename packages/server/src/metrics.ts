@@ -17,7 +17,7 @@ export async function collectMetrics(gw: GatewayClient, tracker: ActivityTracker
   const result: DashboardMetrics = {
     timestamp: Date.now(),
     gwConnected: gw.connected,
-    activity: tracker.getSnapshot(),
+    activity: await tracker.getSnapshot(),
   };
 
   if (gw.connected) {

@@ -85,6 +85,8 @@ export interface ActivityStats {
 }
 
 export interface TaskItem {
+  key: string;
+  title: string;
   task: string;
   startedAt: string;
   lastActivityAt: string;

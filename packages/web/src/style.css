@@ -687,8 +687,19 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.task-title {
+  font-size: 0.62em;
+  color: var(--cyan);
+  line-height: 1.35;
+  font-weight: 600;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .task-desc {
-  font-size: 0.6em;
+  font-size: 0.56em;
   color: var(--text);
   line-height: 1.4;
   display: -webkit-box;
@@ -716,10 +727,10 @@ body {
 .task-result {
   font-size: 0.52em;
   color: var(--text2);
-  margin-top: 2px;
-  line-height: 1.3;
+  margin-top: 3px;
+  line-height: 1.35;
   display: -webkit-box;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

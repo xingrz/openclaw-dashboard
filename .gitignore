@@ -1,3 +1,4 @@
 node_modules/
 dist/
 .device-identity.json
+.task-summary-cache.json
