@@ -58,17 +58,6 @@ export class TaskSummarizer {
   private async _summarizeBatch(tasks: TaskSummaryInput[]): Promise<void> {
     await this._waitForGateway();
 
-    await this._gw.call(
-      'sessions.reset',
-      {
-        key: SUMMARY_SESSION_KEY,
-        reason: 'reset',
-      },
-      GATEWAY_TIMEOUT_MS,
-    ).catch(() => {
-      // Ignore reset errors for first-run/nonexistent session cases.
-    });
-
     const prompt = [
       '你在为监控大屏生成任务标题。',
       '请根据每个任务的“用户原始诉求”，各写一句简短自然的中文标题。',
