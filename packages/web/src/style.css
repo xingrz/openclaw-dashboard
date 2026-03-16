@@ -1,6 +1,6 @@
 /* === OpenClaw Dashboard === */
 
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Orbitron:wght@400;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500;700&family=Noto+Sans+SC:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap');
 
 /* ── Design Tokens ──────────────────────────────────────── */
 
@@ -96,7 +96,7 @@ body {
 }
 
 .header h1 {
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Orbitron', 'JetBrains Mono', sans-serif;
   font-size: 1.2em;
   font-weight: 900;
   letter-spacing: 3px;
@@ -827,6 +827,22 @@ body {
 }
 
 /* ── Responsive ─────────────────────────────────────────── */
+
+.task-title,
+.task-desc,
+.activity-text,
+.session-key,
+.inline-name {
+  font-family:
+    'Inter',
+    'Noto Sans SC',
+    'Microsoft YaHei UI',
+    'Microsoft YaHei',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Source Han Sans SC',
+    sans-serif;
+}
 
 @media (max-width: 1400px) {
   .header {
