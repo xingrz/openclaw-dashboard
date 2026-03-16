@@ -23,15 +23,15 @@ export function TokenUsageCard({ usageCost }: TokenUsageCardProps) {
         <div className="metrics-row">
           <div className="metric">
             <div className="metric-value">{fmtTokens(t?.totalTokens)}</div>
-            <div className="metric-label">Total Tokens</div>
+            <div className="metric-label">Total</div>
           </div>
           <div className="metric">
             <div className="metric-value accent-green">{fmtCost(t?.totalCost)}</div>
-            <div className="metric-label">Total Cost</div>
+            <div className="metric-label">Cost</div>
           </div>
           <div className="metric">
             <div className="metric-value accent-cyan">{fmtPct(t ? cacheRate : undefined)}</div>
-            <div className="metric-label">Cache Ratio</div>
+            <div className="metric-label">Cached</div>
           </div>
           <div className="metric">
             <div className="metric-value accent-purple">{fmtTokens(t?.output)}</div>
