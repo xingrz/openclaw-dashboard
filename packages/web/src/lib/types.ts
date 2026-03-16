@@ -79,6 +79,7 @@ export interface ActivityItem {
   ts: string;
   session: string;
   icon: string;
+  seq: number;
   text?: string;
   tool?: string;
 }

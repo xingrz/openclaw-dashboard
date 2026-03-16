@@ -25,6 +25,7 @@ export interface ActivityItem {
   ts: string;
   session: string;
   icon: string;
+  seq: number;
   text?: string;
   tool?: string;
 }
@@ -248,8 +249,9 @@ export class ActivityTracker {
     this._stats.lastActivityAt = ts;
   }
 
-  private _addActivity(activity: ActivityItem): void {
-    this._recentActivity.unshift(activity);
+  private _addActivity(activity: Omit<ActivityItem, 'seq'>): void {
+    const withSeq: ActivityItem = { ...activity, seq: ++this._activitySeq };
+    this._recentActivity.unshift(withSeq);
     if (this._recentActivity.length > MAX_RECENT_ACTIVITY) {
       this._recentActivity.pop();
     }
