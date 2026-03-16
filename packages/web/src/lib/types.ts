@@ -7,7 +7,13 @@ export interface DashboardMetrics {
   status?: StatusData;
   presence?: PresenceItem[];
   usageCost?: UsageCostData;
+  system: SystemSnapshot;
   activity: ActivitySnapshot;
+}
+
+export interface SystemSnapshot {
+  cpuPercent?: number;
+  memPercent: number;
 }
 
 export interface HealthData {

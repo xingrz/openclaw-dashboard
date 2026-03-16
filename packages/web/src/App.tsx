@@ -9,7 +9,7 @@ import { ActivityCard } from './components/ActivityCard';
 import { Footer } from './components/Footer';
 
 export function App() {
-  const { data, wsStatus } = useMetrics();
+  const { data } = useMetrics();
 
   const activity = data?.activity;
   const sessions = data?.status?.sessions?.recent ?? [];
@@ -27,7 +27,7 @@ export function App() {
           <TaskLogCard tasks={activity?.tasks ?? []} />
           <ActivityCard recent={activity?.recent ?? []} />
         </div>
-        <Footer timestamp={data?.timestamp} wsStatus={wsStatus} />
+        <Footer timestamp={data?.timestamp} system={data?.system} />
       </div>
     </>
   );
