@@ -75,6 +75,8 @@ The dashboard listens on `http://127.0.0.1:3210` by default. It only binds to lo
 
 The gateway token is auto-detected from `~/.openclaw/openclaw.json` if not set.
 
+You can also create a `.env` file in the project root to set these variables (see `.env.example`). Values in `.env` will not override existing environment variables.
+
 ### Reverse Proxy
 
 The dashboard binds to `127.0.0.1` only. Use a reverse proxy to serve it over HTTPS or on a public interface.
