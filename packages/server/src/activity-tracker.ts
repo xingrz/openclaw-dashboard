@@ -5,14 +5,12 @@ import { config } from './config.js';
 import {
   extractAssistantSummary,
   extractUserText,
-  isDashboardSummaryPrompt,
-  isDashboardSummaryResult,
   parseJsonLines,
   parseMessageContent,
   readFileRegionLines,
   summarizeToolCall,
 } from './session-parser.js';
-import { TaskSummarizer } from './task-summarizer.js';
+import { SUMMARY_SESSION_KEY, TaskSummarizer } from './task-summarizer.js';
 
 const MAX_RECENT_ACTIVITY = 100;
 const HISTORY_LOOKBACK_MS = 24 * 3600 * 1000;
@@ -67,6 +65,14 @@ interface SessionFileInfo {
   mtime: number;
 }
 
+interface SessionIndexEntry {
+  sessionId: string;
+  sessionFile?: string;
+  [key: string]: unknown;
+}
+
+type SessionIndex = Record<string, SessionIndexEntry>;
+
 function getSessionBaseId(filePath: string): string {
   return path.basename(filePath).replace(/\.jsonl(?:\.(?:reset|deleted)\..+)?$/, '');
 }
@@ -82,24 +88,34 @@ export class ActivityTracker {
   private _hourlyActivity = new Array<number>(24).fill(0);
   private _taskSummarizer = new TaskSummarizer();
   private _activitySeq = 0;
+  private _sessionIndex: SessionIndex = {};
+  private _summarizerSessionIds = new Set<string>();
 
   start(): void {
+    this._refreshSessionIndex();
     this._loadHistory();
 
     try {
-      const watcher = watch('*.jsonl', {
+      const watcher = watch(['*.jsonl', 'sessions.json'], {
         cwd: config.sessionsDir,
         ignoreInitial: false,
         awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
       });
 
       watcher.on('add', (relativePath) => {
+        if (relativePath === 'sessions.json') return;
         const filePath = path.join(config.sessionsDir, relativePath);
+        if (this._isSummarizerFile(filePath)) return;
         this._initFile(filePath);
       });
 
       watcher.on('change', (relativePath) => {
+        if (relativePath === 'sessions.json') {
+          this._refreshSessionIndex();
+          return;
+        }
         const filePath = path.join(config.sessionsDir, relativePath);
+        if (this._isSummarizerFile(filePath)) return;
         this._readNewEntries(filePath);
       });
     } catch (err) {
@@ -208,7 +224,6 @@ export class ActivityTracker {
 
   private _processAssistantMessage(msg: Record<string, unknown>, ts: string, sessionId: string): void {
     const { text, toolCalls } = parseMessageContent(msg as { role: string; content: string });
-    if (isDashboardSummaryPrompt(text) || isDashboardSummaryResult(text)) return;
 
     for (const tc of toolCalls) {
       this._stats.toolCalls++;
@@ -237,7 +252,6 @@ export class ActivityTracker {
 
   private _processUserMessage(msg: Record<string, unknown>, ts: string, sessionId: string): void {
     const { text: rawText } = parseMessageContent(msg as { role: string; content: string });
-    if (isDashboardSummaryPrompt(rawText)) return;
 
     const text = extractUserText(rawText);
     if (!text || text.startsWith('Read HEARTBEAT')) return;
@@ -340,7 +354,6 @@ export class ActivityTracker {
 
         if ((msg as { role: string }).role === 'user') {
           const { text: rawText } = parseMessageContent(msg as { role: string; content: string });
-          if (isDashboardSummaryPrompt(rawText)) continue;
 
           const text = extractUserText(rawText, 160);
           if (!text || text.startsWith('A new session was started')) continue;
@@ -357,7 +370,6 @@ export class ActivityTracker {
 
         if ((msg as { role: string }).role === 'assistant') {
           const { text, toolCalls } = parseMessageContent(msg as { role: string; content: string });
-          if (isDashboardSummaryPrompt(text) || isDashboardSummaryResult(text)) continue;
 
           totalToolCalls += toolCalls.length;
           const summary = extractAssistantSummary(text);
@@ -376,7 +388,6 @@ export class ActivityTracker {
         const msg = entry.message as { role: string; content: string };
         if (msg.role === 'assistant') {
           const { text, toolCalls } = parseMessageContent(msg);
-          if (isDashboardSummaryPrompt(text) || isDashboardSummaryResult(text)) continue;
           totalToolCalls += toolCalls.length;
           const summary = extractAssistantSummary(text);
           if (summary) lastAssistantSummary = summary;
@@ -405,25 +416,68 @@ export class ActivityTracker {
     }
   }
 
+  private _refreshSessionIndex(): void {
+    try {
+      const indexPath = path.join(config.sessionsDir, 'sessions.json');
+      const raw = fs.readFileSync(indexPath, 'utf-8');
+      this._sessionIndex = JSON.parse(raw) as SessionIndex;
+    } catch {
+      this._sessionIndex = {};
+    }
+
+    this._summarizerSessionIds.clear();
+    for (const [key, entry] of Object.entries(this._sessionIndex)) {
+      if (key === SUMMARY_SESSION_KEY && entry.sessionId) {
+        this._summarizerSessionIds.add(entry.sessionId);
+      }
+    }
+  }
+
+  private _isSummarizerFile(filePath: string): boolean {
+    return this._summarizerSessionIds.has(getSessionBaseId(filePath));
+  }
+
   private _listSessionFiles(lookbackMs: number, options?: { includeResetArchives?: boolean }): SessionFileInfo[] {
     const includeResetArchives = options?.includeResetArchives ?? false;
-    const files = fs.readdirSync(config.sessionsDir).filter((f) => {
-      if (f.endsWith('.jsonl')) return true;
-      if (includeResetArchives && /\.jsonl\.reset\./.test(f)) return true;
-      return false;
-    });
     const cutoff = Date.now() - lookbackMs;
+    const results: SessionFileInfo[] = [];
 
-    return files
-      .map((f): SessionFileInfo | null => {
-        const filePath = path.join(config.sessionsDir, f);
-        try {
-          return { filePath, mtime: fs.statSync(filePath).mtimeMs };
-        } catch {
-          return null;
+    for (const [key, entry] of Object.entries(this._sessionIndex)) {
+      if (key === SUMMARY_SESSION_KEY) continue;
+      if (!entry.sessionId) continue;
+
+      const filePath = entry.sessionFile || path.join(config.sessionsDir, `${entry.sessionId}.jsonl`);
+      try {
+        const mtime = fs.statSync(filePath).mtimeMs;
+        if (mtime > cutoff) {
+          results.push({ filePath, mtime });
         }
-      })
-      .filter((entry): entry is SessionFileInfo => entry !== null && entry.mtime > cutoff)
-      .sort((a, b) => b.mtime - a.mtime);
+      } catch {
+        // File may not exist yet
+      }
+    }
+
+    if (includeResetArchives) {
+      try {
+        for (const f of fs.readdirSync(config.sessionsDir)) {
+          if (!/\.jsonl\.(?:reset|deleted)\./.test(f)) continue;
+          const filePath = path.join(config.sessionsDir, f);
+          if (this._isSummarizerFile(filePath)) continue;
+
+          try {
+            const mtime = fs.statSync(filePath).mtimeMs;
+            if (mtime > cutoff) {
+              results.push({ filePath, mtime });
+            }
+          } catch {
+            // Skip inaccessible files
+          }
+        }
+      } catch {
+        // Directory scan failure
+      }
+    }
+
+    return results.sort((a, b) => b.mtime - a.mtime);
   }
 }

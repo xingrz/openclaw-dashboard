@@ -5,7 +5,7 @@ import { GatewayClient } from './gateway-client.js';
 
 const CACHE_FILE = path.join(process.cwd(), '.task-summary-cache.json');
 const MAX_BATCH = 6;
-const SUMMARY_SESSION_KEY = 'agent:main:dashboard-task-summarizer';
+export const SUMMARY_SESSION_KEY = 'agent:main:dashboard-task-summarizer';
 const GATEWAY_TIMEOUT_MS = 120_000;
 
 export interface TaskSummaryInput {

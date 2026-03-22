@@ -44,17 +44,6 @@ interface ContentPart {
   [key: string]: unknown;
 }
 
-/**
- * Clean system noise from user message text and return the first meaningful line.
- */
-export function isDashboardSummaryPrompt(raw: string): boolean {
-  return /你在为监控大屏生成任务标题|JSON 格式必须是 \{"items"|dashboard-task-summarizer|请只输出JSON/u.test(raw);
-}
-
-export function isDashboardSummaryResult(raw: string): boolean {
-  return /"items"\s*:\s*\[/u.test(raw) && /"title"\s*:/u.test(raw);
-}
-
 export function stripSystemNoise(raw: string): string {
   let text = raw;
   for (const pattern of SYSTEM_NOISE_PATTERNS) {
