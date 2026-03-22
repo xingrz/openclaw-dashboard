@@ -72,6 +72,7 @@ The dashboard listens on `http://127.0.0.1:3210` by default. It only binds to lo
 | `PORT` | `3210` | Dashboard server port |
 | `GW_PORT` | `18789` | Gateway WebSocket port |
 | `OPENCLAW_GATEWAY_TOKEN` | *(auto-detected)* | Gateway auth token |
+| `DASHBOARD_AGENTS` | `*` | Session source agents. Use comma-separated names like `main,vibesku-data` or `*` for all agents under `~/.openclaw/agents`. |
 
 The gateway token is auto-detected from `~/.openclaw/openclaw.json` if not set.
 

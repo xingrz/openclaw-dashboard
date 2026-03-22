@@ -73,12 +73,24 @@ interface SessionIndexEntry {
 
 type SessionIndex = Record<string, SessionIndexEntry>;
 
+interface SessionContext {
+  agent: string;
+  sessionBaseId: string;
+  sessionDisplayId: string;
+}
+
 function getSessionBaseId(filePath: string): string {
   return path.basename(filePath).replace(/\.jsonl(?:\.(?:reset|deleted)\..+)?$/, '');
 }
 
-function getSessionDisplayId(filePath: string): string {
-  return getSessionBaseId(filePath).slice(0, 8);
+function getSessionContext(filePath: string): SessionContext {
+  const sessionBaseId = getSessionBaseId(filePath);
+  const sessionDisplayId = sessionBaseId.slice(0, 8);
+  const normalized = filePath.replace(/\\/g, '/');
+  const match = normalized.match(/\/agents\/([^/]+)\/sessions\//);
+  const agent = match?.[1] || 'main';
+
+  return { agent, sessionBaseId, sessionDisplayId };
 }
 
 export class ActivityTracker {
@@ -88,39 +100,64 @@ export class ActivityTracker {
   private _hourlyActivity = new Array<number>(24).fill(0);
   private _taskSummarizer = new TaskSummarizer();
   private _activitySeq = 0;
-  private _sessionIndex: SessionIndex = {};
+  private _watchedDirs = new Set<string>();
+  private _activeSessionsDirs: string[] = [];
+  private _activeAgents: string[] = [];
+
+  /** Per-agent session index (from sessions.json). */
+  private _sessionIndexes = new Map<string, SessionIndex>();
   private _summarizerSessionIds = new Set<string>();
 
   start(): void {
-    this._refreshSessionIndex();
+    this._activeSessionsDirs = [...config.sessionsDirs];
+    this._activeAgents = [...config.dashboardAgents];
+
+    for (const sessionsDir of this._activeSessionsDirs) {
+      this._refreshSessionIndex(sessionsDir);
+    }
+
     this._loadHistory();
+
+    for (const sessionsDir of this._activeSessionsDirs) {
+      this._watchDir(sessionsDir);
+    }
+  }
+
+  private _watchDir(sessionsDir: string): void {
+    if (this._watchedDirs.has(sessionsDir)) return;
+    this._watchedDirs.add(sessionsDir);
 
     try {
       const watcher = watch(['*.jsonl', 'sessions.json'], {
-        cwd: config.sessionsDir,
+        cwd: sessionsDir,
         ignoreInitial: false,
         awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
       });
 
       watcher.on('add', (relativePath) => {
         if (relativePath === 'sessions.json') return;
-        const filePath = path.join(config.sessionsDir, relativePath);
+        const filePath = path.join(sessionsDir, relativePath);
         if (this._isSummarizerFile(filePath)) return;
         this._initFile(filePath);
       });
 
       watcher.on('change', (relativePath) => {
         if (relativePath === 'sessions.json') {
-          this._refreshSessionIndex();
+          this._refreshSessionIndex(sessionsDir);
           return;
         }
-        const filePath = path.join(config.sessionsDir, relativePath);
+        const filePath = path.join(sessionsDir, relativePath);
         if (this._isSummarizerFile(filePath)) return;
         this._readNewEntries(filePath);
       });
     } catch (err) {
-      console.error('[activity] Failed to start file watcher:', (err as Error).message);
+      console.error(`[activity] Failed to start watcher for ${sessionsDir}:`, (err as Error).message);
     }
+  }
+
+  /** Agents currently being monitored (startup + dynamically discovered). */
+  get activeAgents(): readonly string[] {
+    return this._activeAgents;
   }
 
   async getSnapshot(): Promise<ActivitySnapshot> {
@@ -140,8 +177,9 @@ export class ActivityTracker {
 
   private _loadHistory(): void {
     try {
-      const recentFiles = this._listSessionFiles(HISTORY_LOOKBACK_MS);
-      for (const { filePath } of recentFiles.slice(0, 5)) {
+      const recentFiles = this._listSessionFilesBalanced(HISTORY_LOOKBACK_MS, 4);
+      const maxHistoryFiles = 40;
+      for (const { filePath } of recentFiles.slice(0, maxHistoryFiles)) {
         this._loadRecentFromFile(filePath);
       }
 
@@ -211,7 +249,8 @@ export class ActivityTracker {
 
     const msg = entry.message as { role: string; content: unknown };
     const ts = (entry.timestamp as string) || new Date().toISOString();
-    const sessionId = getSessionDisplayId(filePath);
+    const { agent, sessionDisplayId } = getSessionContext(filePath);
+    const sessionId = `${agent}:${sessionDisplayId}`;
 
     this._recordTimestamp(ts);
 
@@ -288,8 +327,10 @@ export class ActivityTracker {
 
   private _syncRecentFiles(): void {
     try {
-      const recentFiles = this._listSessionFiles(HISTORY_LOOKBACK_MS);
-      for (const { filePath } of recentFiles.slice(0, 8)) {
+      this._refreshDiscoveredDirs();
+      const recentFiles = this._listSessionFilesBalanced(HISTORY_LOOKBACK_MS, 4);
+      const maxFilesPerSync = 40;
+      for (const { filePath } of recentFiles.slice(0, maxFilesPerSync)) {
         this._readNewEntries(filePath);
       }
     } catch {
@@ -297,16 +338,38 @@ export class ActivityTracker {
     }
   }
 
+  /** Re-check for agent session dirs that may have been created after startup. */
+  private _refreshDiscoveredDirs(): void {
+    const known = new Set(this._activeSessionsDirs);
+    for (const agent of config.allAgents) {
+      const dir = path.join(config.agentsHome, agent, 'sessions');
+      if (known.has(dir)) continue;
+      try {
+        if (fs.existsSync(dir)) {
+          this._activeSessionsDirs.push(dir);
+          this._activeAgents.push(agent);
+          known.add(dir);
+          this._refreshSessionIndex(dir);
+          this._watchDir(dir);
+          console.log(`[activity] Discovered new sessions dir for agent "${agent}"`);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   private async _extractTasks(): Promise<TaskItem[]> {
     try {
-      const recentFiles = this._listSessionFiles(TASK_LOOKBACK_MS, { includeResetArchives: true });
+      const recentFiles = this._listSessionFilesBalanced(TASK_LOOKBACK_MS, 12, { includeResetArchives: true });
       const tasks: TaskItem[] = [];
-      const maxScannedFiles = 96;
-      const maxCollectedTasks = 24;
+      const maxScannedFiles = 160;
+      const maxCollectedTasks = 36;
       const seenSessions = new Set<string>();
 
       for (const { filePath } of recentFiles) {
-        const sessionId = getSessionBaseId(filePath);
+        const { agent, sessionBaseId } = getSessionContext(filePath);
+        const sessionId = `${agent}:${sessionBaseId}`;
         if (seenSessions.has(sessionId)) continue;
         seenSessions.add(sessionId);
         if (seenSessions.size > maxScannedFiles) break;
@@ -396,12 +459,13 @@ export class ActivityTracker {
 
       if (initialUserTexts.length === 0 || !firstUserTs) return null;
 
+      const { agent, sessionDisplayId } = getSessionContext(filePath);
       const taskText = initialUserTexts.join(' ').slice(0, 220);
       const result = lastAssistantSummary || null;
-      const sessionFile = getSessionDisplayId(filePath);
+      const sessionFile = `${agent}:${sessionDisplayId}`;
 
       return {
-        key: sessionFile,
+        key: `${agent}:${sessionDisplayId}`,
         title: '正在整理任务摘要',
         task: taskText,
         startedAt: firstUserTs,
@@ -416,19 +480,24 @@ export class ActivityTracker {
     }
   }
 
-  private _refreshSessionIndex(): void {
+  /** Load/reload the sessions.json index for a given agent sessions dir. */
+  private _refreshSessionIndex(sessionsDir: string): void {
     try {
-      const indexPath = path.join(config.sessionsDir, 'sessions.json');
+      const indexPath = path.join(sessionsDir, 'sessions.json');
       const raw = fs.readFileSync(indexPath, 'utf-8');
-      this._sessionIndex = JSON.parse(raw) as SessionIndex;
+      const index = JSON.parse(raw) as SessionIndex;
+      this._sessionIndexes.set(sessionsDir, index);
     } catch {
-      this._sessionIndex = {};
+      this._sessionIndexes.set(sessionsDir, {});
     }
 
+    // Rebuild summarizer session IDs from all indexes
     this._summarizerSessionIds.clear();
-    for (const [key, entry] of Object.entries(this._sessionIndex)) {
-      if (key === SUMMARY_SESSION_KEY && entry.sessionId) {
-        this._summarizerSessionIds.add(entry.sessionId);
+    for (const index of this._sessionIndexes.values()) {
+      for (const [key, entry] of Object.entries(index)) {
+        if (key === SUMMARY_SESSION_KEY && entry.sessionId) {
+          this._summarizerSessionIds.add(entry.sessionId);
+        }
       }
     }
   }
@@ -437,16 +506,44 @@ export class ActivityTracker {
     return this._summarizerSessionIds.has(getSessionBaseId(filePath));
   }
 
-  private _listSessionFiles(lookbackMs: number, options?: { includeResetArchives?: boolean }): SessionFileInfo[] {
+  /**
+   * List session files across all agents, balanced by perAgentLimit per agent dir.
+   * Uses sessions.json index for active sessions; falls back to dir scan for archives.
+   */
+  private _listSessionFilesBalanced(
+    lookbackMs: number,
+    perAgentLimit: number,
+    options?: { includeResetArchives?: boolean },
+  ): SessionFileInfo[] {
     const includeResetArchives = options?.includeResetArchives ?? false;
     const cutoff = Date.now() - lookbackMs;
+    const all: SessionFileInfo[] = [];
+
+    for (const sessionsDir of this._activeSessionsDirs) {
+      const filesForDir = this._listSessionFilesFromDir(sessionsDir, cutoff, includeResetArchives)
+        .sort((a, b) => b.mtime - a.mtime)
+        .slice(0, perAgentLimit);
+
+      all.push(...filesForDir);
+    }
+
+    return all.sort((a, b) => b.mtime - a.mtime);
+  }
+
+  private _listSessionFilesFromDir(
+    sessionsDir: string,
+    cutoff: number,
+    includeResetArchives: boolean,
+  ): SessionFileInfo[] {
     const results: SessionFileInfo[] = [];
 
-    for (const [key, entry] of Object.entries(this._sessionIndex)) {
+    // Use sessions.json index for active sessions
+    const index = this._sessionIndexes.get(sessionsDir) ?? {};
+    for (const [key, entry] of Object.entries(index)) {
       if (key === SUMMARY_SESSION_KEY) continue;
       if (!entry.sessionId) continue;
 
-      const filePath = entry.sessionFile || path.join(config.sessionsDir, `${entry.sessionId}.jsonl`);
+      const filePath = entry.sessionFile || path.join(sessionsDir, `${entry.sessionId}.jsonl`);
       try {
         const mtime = fs.statSync(filePath).mtimeMs;
         if (mtime > cutoff) {
@@ -457,11 +554,12 @@ export class ActivityTracker {
       }
     }
 
+    // Scan directory for reset/deleted archives
     if (includeResetArchives) {
       try {
-        for (const f of fs.readdirSync(config.sessionsDir)) {
+        for (const f of fs.readdirSync(sessionsDir)) {
           if (!/\.jsonl\.(?:reset|deleted)\./.test(f)) continue;
-          const filePath = path.join(config.sessionsDir, f);
+          const filePath = path.join(sessionsDir, f);
           if (this._isSummarizerFile(filePath)) continue;
 
           try {
@@ -478,6 +576,6 @@ export class ActivityTracker {
       }
     }
 
-    return results.sort((a, b) => b.mtime - a.mtime);
+    return results;
   }
 }

@@ -76,6 +76,8 @@ process.on('unhandledRejection', (err) => console.error('[rejection]', (err as E
 
 server.listen(config.port, '127.0.0.1', () => {
   console.log(`[dashboard] 🦐 http://127.0.0.1:${config.port}`);
+  console.log(`[dashboard] Configured agents: ${config.allAgents.join(', ')} (${config.allAgents.length} total)`);
+  console.log(`[dashboard] Active agents (sessions found at startup): ${config.dashboardAgents.join(', ')} (${config.dashboardAgents.length} total)`);
   gw.connect();
   tracker.start();
   setTimeout(updateLoop, STARTUP_DELAY_MS);
