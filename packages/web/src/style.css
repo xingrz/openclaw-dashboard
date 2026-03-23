@@ -559,41 +559,9 @@ body {
   letter-spacing: 1px;
   min-width: 48px;
   text-align: center;
-}
-
-.session-channel.telegram {
-  background: #0088cc33;
-  color: #29b6f6;
-}
-
-.session-channel.webchat {
-  background: #00f0ff22;
-  color: var(--cyan);
-}
-
-.session-channel.wecom {
-  background: #07c16022;
-  color: #4caf50;
-}
-
-.session-channel.cron {
-  background: #b366ff22;
-  color: var(--purple);
-}
-
-.session-channel.feishu {
-  background: #3370ff22;
-  color: #64b5f6;
-}
-
-.session-channel.discord {
-  background: #5865f222;
-  color: #7986cb;
-}
-
-.session-channel.unknown {
-  background: #ffffff11;
-  color: var(--text2);
+  background: var(--tag-bg, #ffffff11);
+  color: var(--tag-fg, var(--text2));
+  border: 1px solid var(--tag-border, transparent);
 }
 
 .session-key {
@@ -680,6 +648,7 @@ body {
   gap: 5px;
   font-size: 0.55em;
   margin-bottom: 3px;
+  min-width: 0;
 }
 
 .task-time {
@@ -689,6 +658,8 @@ body {
 }
 
 .task-title {
+  flex: 1;
+  min-width: 0;
   font-size: 0.62em;
   color: var(--cyan);
   line-height: 1.35;
@@ -723,6 +694,11 @@ body {
   font-size: 0.85em;
   color: var(--purple);
   white-space: nowrap;
+}
+
+.task-channel {
+  min-width: 42px;
+  font-size: 0.72em;
 }
 
 .task-result {

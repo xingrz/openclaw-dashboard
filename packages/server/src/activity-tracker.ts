@@ -47,6 +47,8 @@ export interface TaskItem {
   toolCount: number;
   result: string | null;
   sessionFile: string;
+  sessionKey: string;
+  channel: string;
 }
 
 export interface ActivitySnapshot {
@@ -93,6 +95,23 @@ function getSessionContext(filePath: string): SessionContext {
   return { agent, sessionBaseId, sessionDisplayId };
 }
 
+function normalizeChannel(channel: string | null | undefined): string {
+  const value = (channel ?? '').trim().toLowerCase();
+  if (!value) return 'unknown';
+  if (value === 'main' || value.startsWith('webchat')) return 'webchat';
+  return value;
+}
+
+function detectChannel(sessionKey: string): string {
+  const parts = sessionKey.split(':');
+  if (parts[0] === 'agent' && parts.length >= 3) {
+    return normalizeChannel(parts[2]);
+  }
+
+  const fallback = sessionKey.replace(/^agent:[^:]+:/, '').split(':')[0];
+  return normalizeChannel(fallback);
+}
+
 export class ActivityTracker {
   private _fileOffsets = new Map<string, FileState>();
   private _recentActivity: ActivityItem[] = [];
@@ -107,6 +126,7 @@ export class ActivityTracker {
   /** Per-agent session index (from sessions.json). */
   private _sessionIndexes = new Map<string, SessionIndex>();
   private _summarizerSessionIds = new Set<string>();
+  private _sessionKeysById = new Map<string, string>();
 
   start(): void {
     this._activeSessionsDirs = [...config.sessionsDirs];
@@ -459,10 +479,12 @@ export class ActivityTracker {
 
       if (initialUserTexts.length === 0 || !firstUserTs) return null;
 
-      const { agent, sessionDisplayId } = getSessionContext(filePath);
+      const { agent, sessionBaseId, sessionDisplayId } = getSessionContext(filePath);
       const taskText = initialUserTexts.join(' ').slice(0, 220);
       const result = lastAssistantSummary || null;
       const sessionFile = `${agent}:${sessionDisplayId}`;
+      const sessionLookupKey = `${agent}:${sessionBaseId}`;
+      const sessionKey = this._sessionKeysById.get(sessionLookupKey) ?? '';
 
       return {
         key: `${agent}:${sessionDisplayId}`,
@@ -474,6 +496,8 @@ export class ActivityTracker {
         toolCount: totalToolCalls,
         result,
         sessionFile,
+        sessionKey,
+        channel: sessionKey ? detectChannel(sessionKey) : 'unknown',
       };
     } catch {
       return null;
@@ -491,13 +515,23 @@ export class ActivityTracker {
       this._sessionIndexes.set(sessionsDir, {});
     }
 
-    // Rebuild summarizer session IDs from all indexes
+    // Rebuild summarizer session IDs and session-key lookup from all indexes
     this._summarizerSessionIds.clear();
+    this._sessionKeysById.clear();
     for (const index of this._sessionIndexes.values()) {
       for (const [key, entry] of Object.entries(index)) {
-        if (key === SUMMARY_SESSION_KEY && entry.sessionId) {
+        if (!entry.sessionId) continue;
+
+        const parts = key.split(':');
+        const agent = parts[0] === 'agent' && parts.length >= 2 ? parts[1] : 'main';
+        const lookupKey = `${agent}:${entry.sessionId}`;
+
+        if (key === SUMMARY_SESSION_KEY) {
           this._summarizerSessionIds.add(entry.sessionId);
+          continue;
         }
+
+        this._sessionKeysById.set(lookupKey, key);
       }
     }
   }

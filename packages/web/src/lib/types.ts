@@ -101,6 +101,8 @@ export interface TaskItem {
   toolCount: number;
   result: string | null;
   sessionFile: string;
+  sessionKey: string;
+  channel: string;
 }
 
 export interface PresenceItem {

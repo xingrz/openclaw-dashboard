@@ -1,4 +1,5 @@
-import { fmtTokens, timeAgo, detectChannel } from '../lib/format';
+import type { CSSProperties } from 'react';
+import { fmtTokens, timeAgo, detectChannel, getChannelTagStyle } from '../lib/format';
 import type { SessionItem } from '../lib/types';
 
 interface SessionsCardProps {
@@ -37,7 +38,7 @@ function SessionRow({ session: s }: { session: SessionItem }) {
 
   return (
     <div className="session-item">
-      <span className={`session-channel ${ch}`}>{ch}</span>
+      <span className="session-channel" style={getChannelTagStyle(ch) as CSSProperties}>{ch}</span>
       <span className="session-key" title={s.key}>{shortKey}</span>
       <span className="session-tokens">{fmtTokens(s.totalTokens)}</span>
       <div className="ctx-bar">

@@ -1,4 +1,5 @@
-import { fmtTime } from '../lib/format';
+import type { CSSProperties } from 'react';
+import { fmtTime, getChannelTagStyle } from '../lib/format';
 import type { TaskItem } from '../lib/types';
 
 interface TaskLogCardProps {
@@ -40,6 +41,13 @@ function TaskRow({ task: t }: { task: TaskItem }) {
         <span className="task-time">{fmtTime(t.startedAt)}</span>
         <span className="task-title">{t.title}</span>
         {t.toolCount > 0 && <span className="task-tools">🔧 {t.toolCount}</span>}
+        <span
+          className="session-channel task-channel"
+          style={getChannelTagStyle(t.channel) as CSSProperties}
+          title={t.sessionKey || t.sessionFile}
+        >
+          {t.channel}
+        </span>
         <span className="task-status">{statusLabel}</span>
       </div>
       <div className="task-desc">{t.task}</div>
